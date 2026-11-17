@@ -665,6 +665,15 @@
     });
   }
 
+  function enterImmersive() {
+    if (!window.matchMedia('(display-mode: standalone)').matches) return;
+    if (document.fullscreenElement) return;
+    var root = document.documentElement;
+    if (!root.requestFullscreen) return;
+    var pending = root.requestFullscreen({ navigationUI: 'hide' });
+    if (pending && pending.catch) pending.catch(function () {});
+  }
+
   function cacheShell() {
     if (!('serviceWorker' in navigator)) return;
     navigator.serviceWorker.register('./service-worker.js', {
@@ -762,6 +771,10 @@
   }
 
   cacheShell();
+  document.addEventListener('pointerdown', enterImmersive, true);
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible') enterImmersive();
+  });
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {
