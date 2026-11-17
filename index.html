@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<!--
+  Velocímetro Cockpit — PWA instalável.
+  Android (Chrome): menu do navegador → Instalar app / Adicionar à tela inicial.
+  iPhone (Safari): Compartilhar → Adicionar à Tela de Início.
+  Velocímetro, viagem, bateria e a tela acesa usam o aparelho e funcionam sem internet.
+  O clima mostra a última previsão salva quando não há rede.
+-->
+<html lang="pt-BR" data-theme="amber">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <meta name="color-scheme" content="dark">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="Velocímetro">
+  <title>Velocímetro Cockpit</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+  <script>
+    try {
+      var savedTheme = localStorage.getItem('velocimetro.theme');
+      if (savedTheme) document.documentElement.dataset.theme = JSON.parse(savedTheme);
+    } catch (error) {}
+  </script>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="led" aria-hidden="true"></span>
+        <span class="brand-copy">
+          <span class="brand-name">Painel</span>
+          <span class="gps-pill" id="gpsPill">Aguardando GPS</span>
+        </span>
+      </div>
+      <button class="theme-chip" id="themeChip" type="button">Âmbar</button>
+      <div class="top-meta">
+        <time id="clock" datetime="">--:--</time>
+        <div class="battery" id="battery" aria-live="polite">
+          <span id="batteryText">N/D</span>
+          <svg class="bat-icon" id="batIcon" viewBox="0 0 28 14" aria-hidden="true">
+            <rect x="0.8" y="0.8" width="23" height="12.4" rx="2" fill="none" stroke="currentColor" stroke-width="1.4"></rect>
+            <rect x="24.4" y="4.2" width="2.2" height="5.6" rx="0.6" fill="currentColor"></rect>
+            <rect id="batFill" x="2.2" y="2.4" width="20" height="9.2" rx="1" fill="currentColor"></rect>
+          </svg>
+        </div>
+      </div>
+    </header>
+
+    <main class="dashboard" id="dashboard">
+      <button class="gauge" id="gauge" type="button" aria-pressed="false" aria-label="Alternar modo foco de velocidade">
+        <span class="hud-hint">Toque para voltar</span>
+        <span class="bezel">
+          <span class="screw screw-a" aria-hidden="true"></span>
+          <span class="screw screw-b" aria-hidden="true"></span>
+          <span class="screw screw-c" aria-hidden="true"></span>
+          <span class="screw screw-d" aria-hidden="true"></span>
+          <span class="face">
+            <svg class="dial" viewBox="0 0 360 360" aria-hidden="true">
+              <path id="track" fill="none"></path>
+              <path id="redline" fill="none"></path>
+              <path id="progress" fill="none"></path>
+              <g id="ticks"></g>
+              <g id="needle">
+                <polygon points="176.5,186 183.5,186 181.2,36 178.8,36"></polygon>
+                <polygon class="needle-tail" points="178,186 182,186 181.2,206 178.8,206"></polygon>
+              </g>
+              <circle class="hub-ring" cx="180" cy="180" r="16"></circle>
+              <circle class="hub" cx="180" cy="180" r="6"></circle>
+            </svg>
+            <span class="readout">
+              <span class="kmh" id="kmh">0</span>
+              <span class="units">
+                <span>km/h</span>
+                <span id="mph">0 mph</span>
+              </span>
+            </span>
+          </span>
+        </span>
+      </button>
+
+      <div class="side">
+        <section class="plate weather" aria-label="Clima">
+          <div class="weather-now">
+            <span class="weather-icon" id="weatherIcon" aria-hidden="true"></span>
+            <div>
+              <div class="weather-temp">
+                <span id="weatherTemp">--°</span>
+                <span class="weather-desc" id="weatherDesc">Clima indisponível</span>
+              </div>
+            </div>
+          </div>
+          <div class="hours" id="hours"></div>
+        </section>
+
+        <section class="plate trip" aria-label="Viagem">
+          <div class="trip-head">
+            <span class="kicker">Viagem</span>
+            <span class="trip-state" id="tripState">Parada</span>
+          </div>
+          <div class="trip-metrics">
+            <div>
+              <div class="trip-distance"><span id="tripKm">0,0</span> <span class="unit">km</span></div>
+              <div class="fine">Distância</div>
+            </div>
+            <div class="trip-side">
+              <div id="tripTime">0 min</div>
+              <div class="fine" id="tripAvg">— km/h méd</div>
+            </div>
+          </div>
+          <div class="trip-actions">
+            <button class="skeuo" id="startTrip" type="button">
+              <span class="ico" aria-hidden="true">▶</span>
+              <span>Iniciar</span>
+            </button>
+            <button class="skeuo" id="pauseTrip" type="button" disabled>
+              <span class="ico" aria-hidden="true">❚❚</span>
+              <span id="pauseLabel">Pausar</span>
+            </button>
+            <button class="skeuo skeuo-stop" id="finishTrip" type="button" disabled>
+              <span class="ico" aria-hidden="true">■</span>
+              <span>Finalizar</span>
+            </button>
+          </div>
+        </section>
+
+        <div class="launchers">
+          <button class="skeuo launcher" id="openMaps" type="button">
+            <span class="launcher-copy"><strong>Maps</strong><small>Rotas</small></span>
+          </button>
+          <button class="skeuo launcher" id="openSpotify" type="button">
+            <span class="launcher-copy"><strong>Spotify</strong><small>Áudio</small></span>
+          </button>
+        </div>
+
+        <button class="skeuo history-open" id="openHistory" type="button">
+          <span class="launcher-copy"><strong>Histórico</strong><small id="historyHint">Nenhuma viagem salva</small></span>
+          <span class="chevron" aria-hidden="true">›</span>
+        </button>
+      </div>
+    </main>
+  </div>
+
+  <div class="scrim" id="scrim" hidden></div>
+  <aside class="drawer" id="drawer" hidden aria-labelledby="drawerTitle">
+    <header class="drawer-head">
+      <div>
+        <h1 id="drawerTitle">Histórico</h1>
+        <p class="fine" id="historySummary">Nenhuma viagem salva</p>
+      </div>
+      <button class="skeuo close-drawer" id="closeDrawer" type="button">Fechar</button>
+    </header>
+    <div class="history-list" id="historyList"></div>
+    <section class="drawer-block themes-block" aria-label="Tema">
+      <h2>Tema</h2>
+      <div class="themes" id="themes">
+        <button type="button" data-theme-choice="amber">Âmbar</button>
+        <button type="button" data-theme-choice="stealth">Stealth</button>
+        <button type="button" data-theme-choice="red">Vermelho</button>
+        <button type="button" data-theme-choice="daylight">Dia</button>
+        <button type="button" data-theme-choice="sunlight">Sol</button>
+      </div>
+    </section>
+    <div class="drawer-tools">
+    <section class="plate sim-row">
+      <div>
+        <div class="kicker">Simulação</div>
+        <p>Testar na mesa sem GPS</p>
+      </div>
+      <button class="switch" id="demoSwitch" type="button" role="switch" aria-checked="false">
+        <span class="switch-knob" aria-hidden="true"></span>
+        <span class="switch-text">Off</span>
+      </button>
+    </section>
+    <p class="install-note" id="installNote">
+      Android (Chrome): menu Instalar app. iPhone (Safari): Compartilhar, Adicionar à Tela de Início.
+    </p>
+    <button class="skeuo install-btn" id="installBtn" type="button" hidden>Instalar</button>
+    </div>
+  </aside>
+  <script src="app.js"></script>
+</body>
+</html>
