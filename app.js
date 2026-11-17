@@ -667,7 +667,10 @@
 
   function cacheShell() {
     if (!('serviceWorker' in navigator)) return;
-    navigator.serviceWorker.register('./service-worker.js').catch(function () {});
+    navigator.serviceWorker.register('./service-worker.js', {
+      scope: './',
+      updateViaCache: 'none'
+    }).catch(function () {});
   }
 
   function init() {
@@ -758,6 +761,7 @@
     else startGps();
   }
 
+  cacheShell();
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {

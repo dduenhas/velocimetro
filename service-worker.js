@@ -1,4 +1,4 @@
-const CACHE = 'velocimetro-shell-v8';
+const CACHE = 'velocimetro-shell-v9';
 const ASSETS = [
   './',
   './index.html',
@@ -9,14 +9,22 @@ const ASSETS = [
   './icons/icon-512.png'
 ];
 
+async function storeAsset(cache, asset) {
+  const response = await fetch(new Request(asset, { cache: 'reload', redirect: 'follow' }));
+  if (!response.ok) throw new Error('Falha ao cachear ' + asset);
+  const headers = new Headers(response.headers);
+  const body = await response.arrayBuffer();
+  await cache.put(asset, new Response(body, {
+    status: 200,
+    statusText: 'OK',
+    headers: headers
+  }));
+}
+
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE);
-    await Promise.all(ASSETS.map(async (asset) => {
-      const response = await fetch(new Request(asset, { cache: 'reload' }));
-      if (!response.ok) throw new Error('Falha ao cachear ' + asset);
-      await cache.put(asset, response);
-    }));
+    await Promise.all(ASSETS.map((asset) => storeAsset(cache, asset)));
     await self.skipWaiting();
   })());
 });
