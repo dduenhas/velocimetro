@@ -267,7 +267,7 @@
     }
     els.weatherIcon.innerHTML = weatherSvg(data.code);
     els.weatherTemp.textContent = Math.round(data.temp) + '°';
-    els.weatherDesc.textContent = weatherName(data.code) + (simulated ? ' · simulado' : '');
+    els.weatherDesc.textContent = weatherName(data.code) + (data.place ? ' · ' + data.place : '') + (simulated ? ' · simulado' : '');
     (data.hours || []).forEach(function (hour) {
       var chip = document.createElement('div');
       chip.className = 'hour';
@@ -287,9 +287,54 @@
     return haversine(state.weather.lat, state.weather.lon, lat, lon) > WEATHER_MOVE_KM;
   }
 
+  function ufCode(code) {
+    var parts = String(code || '').split('-');
+    var uf = parts[parts.length - 1];
+    return /^[A-Za-z]{2}$/.test(uf) ? uf.toUpperCase() : '';
+  }
+
+  function formatPlace(data) {
+    var city = data.locality || '';
+    var admins = (data.localityInfo && data.localityInfo.administrative) || [];
+    if (!city) {
+      for (var i = 0; i < admins.length; i++) {
+        if (admins[i].adminLevel === 8 && admins[i].name) {
+          city = admins[i].name;
+          break;
+        }
+      }
+    }
+    if (!city && data.city && data.city.indexOf('Região') !== 0) city = data.city;
+    var uf = ufCode(data.principalSubdivisionCode);
+    if (city && uf) return city + '/' + uf;
+    return city || uf;
+  }
+
+  function rememberPlace(place) {
+    if (!place || !state.weather || state.weather.place === place) return;
+    state.weather.place = place;
+    writeStore('velocimetro.weather', state.weather);
+    renderWeather();
+  }
+
+  function fetchPlace(lat, lon) {
+    var url = new URL('https://api.bigdatacloud.net/data/reverse-geocode-client');
+    url.searchParams.set('latitude', lat.toFixed(3));
+    url.searchParams.set('longitude', lon.toFixed(3));
+    url.searchParams.set('localityLanguage', 'pt');
+    fetch(url.toString())
+      .then(function (response) { if (!response.ok) throw new Error('lugar'); return response.json(); })
+      .then(function (data) { rememberPlace(formatPlace(data)); })
+      .catch(function () {});
+  }
+
   function fetchWeather(lat, lon) {
     if (state.demo || !navigator.onLine) return;
-    if (!shouldRefreshWeather(lat, lon)) return;
+    var refresh = shouldRefreshWeather(lat, lon);
+    if (!refresh) {
+      if (state.weather && !state.weather.place) fetchPlace(lat, lon);
+      return;
+    }
     var url = new URL('https://api.open-meteo.com/v1/forecast');
     url.searchParams.set('latitude', lat.toFixed(3));
     url.searchParams.set('longitude', lon.toFixed(3));
@@ -304,6 +349,9 @@
         var times = (data.hourly && data.hourly.time) || [];
         var temps = (data.hourly && data.hourly.temperature_2m) || [];
         var now = Date.now() - 30 * 60 * 1000;
+        var moved = state.weather && state.weather.lat != null
+          && haversine(state.weather.lat, state.weather.lon, lat, lon) > WEATHER_MOVE_KM;
+        var keptPlace = !moved && state.weather ? state.weather.place : '';
         var hours = [];
         for (var i = 0; i < times.length && hours.length < 4; i++) {
           var stamp = Date.parse(times[i]);
@@ -319,10 +367,12 @@
           hours: hours,
           lat: lat,
           lon: lon,
+          place: keptPlace || '',
           at: Date.now()
         };
         writeStore('velocimetro.weather', state.weather);
         renderWeather();
+        fetchPlace(lat, lon);
       })
       .catch(function () { renderWeather(); });
   }
