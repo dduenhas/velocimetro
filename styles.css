@@ -956,6 +956,7 @@ body.is-focus .companion:has(#toolFace:not([hidden])) .tool-face {
 }
 
 .trip-row p { margin: 0; font-weight: 700; }
+.trip-row > div { min-width: 0; flex: 1 1 auto; }
 .trip-row .when { color: var(--muted); font-size: 13px; font-weight: 600; }
 .trip-km { font-size: 22px; font-weight: 900; white-space: nowrap; }
 

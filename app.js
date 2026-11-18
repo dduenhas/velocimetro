@@ -446,7 +446,10 @@
     if (ms < 60000) els.tripTime.textContent = Math.round(ms / 1000) + ' s';
     else els.tripTime.textContent = minutes < 60 ? minutes + ' min' : Math.floor(minutes / 60) + ' h ' + (minutes % 60) + ' min';
     els.tripAvg.textContent = ms >= 3000 ? Math.round(km / hours) + ' km/h méd' : '— km/h méd';
-    els.tripState.textContent = trip.paused ? 'Pausada' : 'Gravando';
+    if (trip.simulated) els.tripState.textContent = trip.paused ? 'Pausada' : 'Simulação';
+    else if (trip.paused) els.tripState.textContent = 'Pausada';
+    else if (trip.track && trip.track.length) els.tripState.textContent = 'Trilha ' + trip.track.length;
+    else els.tripState.textContent = 'Sem GPS';
     els.pauseLabel.textContent = trip.paused ? 'Retomar' : 'Pausar';
     els.startTrip.disabled = true;
     els.pauseTrip.disabled = false;
@@ -469,7 +472,8 @@
       distanceKm: 0,
       start: null,
       end: null,
-      track: []
+      track: [],
+      simulated: !!state.demo
     };
     lastFix = null;
     saveTrip();
@@ -508,7 +512,8 @@
       movingMs: movingMs(state.trip, now),
       start: state.trip.start || null,
       end: state.trip.end || null,
-      track: state.trip.track || []
+      track: state.trip.track || [],
+      simulated: !!state.trip.simulated
     });
     if (state.history.length > 30) state.history.length = 30;
     state.trip = null;
@@ -551,6 +556,7 @@
 
   function addDistance(km) {
     if (!state.trip || state.trip.paused || !(km > 0)) return;
+    if (state.demo) state.trip.simulated = true;
     state.trip.distanceKm += km;
     saveTrip();
     renderTrip();
@@ -728,14 +734,18 @@
       if (trip.movingMs) detail += ' · ' + formatSpan(trip.movingMs);
       dist.textContent = detail;
       copy.append(when, dist);
-      if (trip.start || trip.end) {
-        var coords = document.createElement('p');
-        coords.className = 'trip-coords';
+      var note = document.createElement('p');
+      note.className = 'trip-coords';
+      if (trip.track && trip.track.length >= 2) {
         var from = trip.start ? trip.start.lat.toFixed(3) + ', ' + trip.start.lon.toFixed(3) : '—';
         var to = trip.end ? trip.end.lat.toFixed(3) + ', ' + trip.end.lon.toFixed(3) : from;
-        coords.textContent = from + ' → ' + to;
-        copy.appendChild(coords);
+        note.textContent = from + ' → ' + to;
+      } else if (trip.simulated) {
+        note.textContent = 'Simulação não grava o caminho';
+      } else {
+        note.textContent = 'Sem percurso de GPS';
       }
+      copy.appendChild(note);
       var remove = document.createElement('button');
       remove.type = 'button';
       remove.className = 'skeuo icon-btn';

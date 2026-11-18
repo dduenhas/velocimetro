@@ -1,4 +1,4 @@
-const CACHE = 'velocimetro-shell-v12';
+const CACHE = 'velocimetro-shell-v13';
 const ASSETS = [
   './',
   './index.html',
