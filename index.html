@@ -75,14 +75,43 @@
             </svg>
             <span class="readout">
               <span class="kmh" id="kmh">0</span>
-              <span class="units">
-                <span>km/h</span>
-                <span id="mph">0 mph</span>
-              </span>
+              <span class="units"><span>km/h</span></span>
             </span>
           </span>
+          <span class="mph-badge" id="mph">0 mph</span>
         </span>
       </button>
+
+      <aside class="companion" id="companion" hidden>
+        <div class="companion-clock">
+          <button class="clock-dial" id="clockDial" type="button" aria-label="Escolher instrumento ao lado do velocímetro">
+            <span class="bezel clock-bezel">
+              <span class="face">
+                <svg class="dial" viewBox="0 0 360 360" aria-hidden="true">
+                  <g id="clockTicks"></g>
+                  <g id="hourHand"><polygon points="174,184 186,184 183,108 177,108"></polygon></g>
+                  <g id="minuteHand"><polygon points="176,186 184,186 182,72 178,72"></polygon></g>
+                  <g id="secondHand"><line x1="180" y1="196" x2="180" y2="64"></line></g>
+                  <circle class="hub-ring" cx="180" cy="180" r="12"></circle>
+                  <circle class="hub" cx="180" cy="180" r="5"></circle>
+                </svg>
+                <span class="clock-digital" id="clockDigital">--:--</span>
+              </span>
+            </span>
+          </button>
+          <div class="tool-picker" id="toolPicker" hidden>
+            <button type="button" data-tool="">Relógio</button>
+            <button type="button" data-tool="stopwatch">Cronômetro</button>
+            <button type="button" data-tool="timer">Temporizador</button>
+            <button type="button" data-tool="alarm">Alarme</button>
+          </div>
+        </div>
+        <section class="tool-face plate" id="toolFace" hidden>
+          <p class="kicker" id="toolName">Cronômetro</p>
+          <p class="tool-readout" id="toolReadout">00:00</p>
+          <div class="tool-actions" id="toolActions"></div>
+        </section>
+      </aside>
 
       <div class="side">
         <section class="plate weather" aria-label="Clima">
@@ -183,6 +212,18 @@
     <button class="skeuo install-btn" id="installBtn" type="button" hidden>Instalar</button>
     </div>
   </aside>
+  <div class="route-map" id="routeMap" hidden>
+    <header class="drawer-head">
+      <div>
+        <h1>Percurso</h1>
+        <p class="fine" id="mapMeta"></p>
+      </div>
+      <button class="skeuo close-drawer" id="closeMap" type="button">Fechar</button>
+    </header>
+    <p class="map-note" id="mapNote" hidden></p>
+    <div id="mapCanvas"></div>
+    <p class="map-credit">© OpenStreetMap</p>
+  </div>
   <script src="app.js"></script>
 </body>
 </html>

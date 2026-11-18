@@ -20,6 +20,12 @@
   var state = {
     theme: 'amber',
     hud: false,
+    focus: 0,
+    instrument: '',
+    stopwatch: { running: false, elapsed: 0, startedAt: 0 },
+    timer: { running: false, remaining: 5 * 60 * 1000, duration: 5 * 60 * 1000, endsAt: 0, fired: false },
+    alarm: { hour: 7, minute: 0, armed: false, firedKey: '' },
+    toolActionsKey: '',
     demo: false,
     displayKmh: 0,
     samples: [],
@@ -190,10 +196,50 @@
     els.gpsPill.textContent = labels[state.gps] || labels.aguardando;
   }
 
+  function pad2(n) { return n < 10 ? '0' + n : String(n); }
+
+  function formatSpan(ms) {
+    ms = Math.max(0, Math.floor(ms || 0));
+    var total = Math.floor(ms / 1000);
+    var h = Math.floor(total / 3600);
+    var m = Math.floor((total % 3600) / 60);
+    var s = total % 60;
+    if (h > 0) return h + ':' + pad2(m) + ':' + pad2(s);
+    return pad2(m) + ':' + pad2(s);
+  }
+
   function renderClock() {
     var now = new Date();
     els.clock.textContent = padClock(now);
     els.clock.dateTime = now.toISOString();
+    if (els.clockDigital) els.clockDigital.textContent = padClock(now);
+    var seconds = now.getSeconds();
+    var minutes = now.getMinutes() + seconds / 60;
+    var hours = (now.getHours() % 12) + minutes / 60;
+    var hourHand = $('hourHand');
+    var minuteHand = $('minuteHand');
+    var secondHand = $('secondHand');
+    if (hourHand) hourHand.setAttribute('transform', 'rotate(' + (hours * 30).toFixed(2) + ' 180 180)');
+    if (minuteHand) minuteHand.setAttribute('transform', 'rotate(' + (minutes * 6).toFixed(2) + ' 180 180)');
+    if (secondHand) secondHand.setAttribute('transform', 'rotate(' + (seconds * 6).toFixed(2) + ' 180 180)');
+    renderTools(now);
+  }
+
+  function buildClock() {
+    var ns = 'http://www.w3.org/2000/svg';
+    var ticks = $('clockTicks');
+    if (!ticks) return;
+    for (var i = 0; i < 12; i++) {
+      var line = document.createElementNS(ns, 'line');
+      var major = i % 3 === 0;
+      line.setAttribute('x1', '180');
+      line.setAttribute('x2', '180');
+      line.setAttribute('y1', major ? '18' : '24');
+      line.setAttribute('y2', major ? '40' : '34');
+      line.setAttribute('transform', 'rotate(' + (i * 30) + ' 180 180)');
+      line.setAttribute('class', major ? 'tick tick-major' : 'tick tick-minor');
+      ticks.appendChild(line);
+    }
   }
 
   function renderBattery(source) {
@@ -420,7 +466,10 @@
       paused: false,
       pauseStartedAt: null,
       pausedMs: 0,
-      distanceKm: 0
+      distanceKm: 0,
+      start: null,
+      end: null,
+      track: []
     };
     lastFix = null;
     saveTrip();
@@ -455,7 +504,11 @@
       id: state.trip.id,
       startedAt: state.trip.startedAt,
       endedAt: now,
-      distanceKm: state.trip.distanceKm || 0
+      distanceKm: state.trip.distanceKm || 0,
+      movingMs: movingMs(state.trip, now),
+      start: state.trip.start || null,
+      end: state.trip.end || null,
+      track: state.trip.track || []
     });
     if (state.history.length > 30) state.history.length = 30;
     state.trip = null;
@@ -465,6 +518,35 @@
     renderTrip();
     renderHistory();
     tap();
+  }
+
+  function noteTrack(lat, lon) {
+    var trip = state.trip;
+    if (!trip || trip.paused) return;
+    var point = {
+      lat: Math.round(lat * 1e5) / 1e5,
+      lon: Math.round(lon * 1e5) / 1e5
+    };
+    var changed = false;
+    if (!trip.start) {
+      trip.start = point;
+      changed = true;
+    }
+    trip.end = point;
+    if (!trip.track) trip.track = [];
+    var last = trip.track[trip.track.length - 1];
+    if (!last || haversine(last.lat, last.lon, point.lat, point.lon) >= 0.08) {
+      trip.track.push(point);
+      changed = true;
+      if (trip.track.length > 400) {
+        var slim = [];
+        for (var i = 0; i < trip.track.length; i += 2) slim.push(trip.track[i]);
+        var tail = trip.track[trip.track.length - 1];
+        if (slim[slim.length - 1] !== tail) slim.push(tail);
+        trip.track = slim;
+      }
+    }
+    if (changed) saveTrip();
   }
 
   function addDistance(km) {
@@ -491,7 +573,12 @@
       if (kmh == null) kmh = segmentKmh;
       var badAccuracy = typeof coords.accuracy === 'number' && coords.accuracy > 50;
       var jump = segmentKmh > 250 || dt > 30 || dt < 0.3;
-      if (!badAccuracy && !jump && dist >= 0.002) addDistance(dist);
+      if (!badAccuracy && !jump) {
+        noteTrack(coords.latitude, coords.longitude);
+        if (dist >= 0.002) addDistance(dist);
+      }
+    } else if (!(typeof coords.accuracy === 'number' && coords.accuracy > 50)) {
+      noteTrack(coords.latitude, coords.longitude);
     }
     lastFix = { lat: coords.latitude, lon: coords.longitude, t: now };
     if (kmh == null) kmh = 0;
@@ -586,10 +673,18 @@
     writeStore('velocimetro.theme', name);
   }
 
-  function setHud(on) {
-    state.hud = !!on;
-    document.body.classList.toggle('is-hud', state.hud);
-    els.gauge.setAttribute('aria-pressed', state.hud ? 'true' : 'false');
+  function setFocus(mode) {
+    state.focus = mode;
+    state.hud = mode === 2;
+    document.body.classList.toggle('is-focus', mode === 1);
+    document.body.classList.toggle('is-hud', mode === 2);
+    if (els.companion) els.companion.hidden = mode !== 1;
+    if (els.toolPicker && mode !== 1) els.toolPicker.hidden = true;
+    els.gauge.setAttribute('aria-pressed', mode ? 'true' : 'false');
+    if (els.hudHint) {
+      els.hudHint.textContent = mode === 1 ? 'Toque para o velocímetro' : 'Toque para voltar';
+    }
+    if (mode === 1) renderClock();
   }
 
   function openDrawer() {
@@ -629,8 +724,18 @@
       when.textContent = formatWhen(trip.startedAt) + ' → ' + formatClock(trip.endedAt);
       var dist = document.createElement('p');
       dist.className = 'trip-km';
-      dist.textContent = formatKm(trip.distanceKm) + ' km';
+      var detail = formatKm(trip.distanceKm) + ' km';
+      if (trip.movingMs) detail += ' · ' + formatSpan(trip.movingMs);
+      dist.textContent = detail;
       copy.append(when, dist);
+      if (trip.start || trip.end) {
+        var coords = document.createElement('p');
+        coords.className = 'trip-coords';
+        var from = trip.start ? trip.start.lat.toFixed(3) + ', ' + trip.start.lon.toFixed(3) : '—';
+        var to = trip.end ? trip.end.lat.toFixed(3) + ', ' + trip.end.lon.toFixed(3) : from;
+        coords.textContent = from + ' → ' + to;
+        copy.appendChild(coords);
+      }
       var remove = document.createElement('button');
       remove.type = 'button';
       remove.className = 'skeuo icon-btn';
@@ -641,7 +746,22 @@
         renderHistory();
         tap();
       });
-      row.append(copy, remove);
+      var buttons = document.createElement('div');
+      buttons.className = 'trip-buttons';
+      var route = trip.track && trip.track.length >= 2;
+      if (route) {
+        var mapBtn = document.createElement('button');
+        mapBtn.type = 'button';
+        mapBtn.className = 'skeuo icon-btn';
+        mapBtn.textContent = 'Mapa';
+        mapBtn.addEventListener('click', function () {
+          openRoute(trip);
+          tap();
+        });
+        buttons.appendChild(mapBtn);
+      }
+      buttons.appendChild(remove);
+      row.append(copy, buttons);
       list.appendChild(row);
     });
   }
@@ -732,6 +852,278 @@
     }).catch(function () {});
   }
 
+  function audioCtx() {
+    var Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return null;
+    if (!state.audio) state.audio = new Ctx();
+    if (state.audio.state === 'suspended') state.audio.resume();
+    return state.audio;
+  }
+
+  function ring() {
+    if (els.toolFace) els.toolFace.classList.add('is-ringing');
+    clearTimeout(state.ringTimer);
+    state.ringTimer = setTimeout(function () {
+      if (els.toolFace) els.toolFace.classList.remove('is-ringing');
+    }, 4000);
+    try {
+      if (navigator.vibrate) navigator.vibrate([180, 80, 180, 80, 180]);
+      var ctx = audioCtx();
+      if (!ctx) return;
+      [0, 0.28, 0.56].forEach(function (at) {
+        var osc = ctx.createOscillator();
+        var gain = ctx.createGain();
+        osc.frequency.value = 880;
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        var start = ctx.currentTime + at;
+        gain.gain.setValueAtTime(0.0001, start);
+        gain.gain.exponentialRampToValueAtTime(0.22, start + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.22);
+        osc.start(start);
+        osc.stop(start + 0.24);
+      });
+    } catch (error) {}
+  }
+
+  function stopwatchMs() {
+    var sw = state.stopwatch;
+    return sw.elapsed + (sw.running ? Date.now() - sw.startedAt : 0);
+  }
+
+  function timerMs() {
+    var timer = state.timer;
+    if (!timer.running) return timer.remaining;
+    return Math.max(0, timer.endsAt - Date.now());
+  }
+
+  function checkTimer() {
+    var timer = state.timer;
+    if (!timer.running) return;
+    if (timerMs() > 0) return;
+    timer.running = false;
+    timer.remaining = 0;
+    if (!timer.fired) {
+      timer.fired = true;
+      ring();
+    }
+  }
+
+  function checkAlarm(now) {
+    var alarm = state.alarm;
+    if (!alarm.armed) return;
+    if (now.getHours() !== alarm.hour || now.getMinutes() !== alarm.minute) return;
+    var key = now.toDateString() + '-' + alarm.hour + ':' + alarm.minute;
+    if (alarm.firedKey === key) return;
+    alarm.firedKey = key;
+    writeStore('velocimetro.alarm', alarm);
+    ring();
+  }
+
+  function toolButton(label, action) {
+    var button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'skeuo';
+    button.textContent = label;
+    button.addEventListener('click', function (event) {
+      event.stopPropagation();
+      audioCtx();
+      action();
+      state.toolActionsKey = '';
+      renderTools(new Date());
+      tap();
+    });
+    return button;
+  }
+
+  function buildToolActions() {
+    var box = els.toolActions;
+    box.replaceChildren();
+    if (state.instrument === 'stopwatch') {
+      box.appendChild(toolButton(state.stopwatch.running ? 'Pausar' : 'Iniciar', function () {
+        var sw = state.stopwatch;
+        if (sw.running) {
+          sw.elapsed += Date.now() - sw.startedAt;
+          sw.running = false;
+        } else {
+          sw.startedAt = Date.now();
+          sw.running = true;
+        }
+      }));
+      box.appendChild(toolButton('Zerar', function () {
+        state.stopwatch = { running: false, elapsed: 0, startedAt: 0 };
+      }));
+    } else if (state.instrument === 'timer') {
+      if (!state.timer.running) {
+        box.appendChild(toolButton('−', function () {
+          var next = Math.max(60000, state.timer.duration - 60000);
+          state.timer.duration = next;
+          state.timer.remaining = next;
+          state.timer.fired = false;
+        }));
+        box.appendChild(toolButton('+', function () {
+          var next = Math.min(180 * 60000, state.timer.duration + 60000);
+          state.timer.duration = next;
+          state.timer.remaining = next;
+          state.timer.fired = false;
+        }));
+      }
+      box.appendChild(toolButton(state.timer.running ? 'Pausar' : 'Iniciar', function () {
+        var timer = state.timer;
+        if (timer.running) {
+          timer.remaining = timerMs();
+          timer.running = false;
+        } else {
+          if (timer.remaining <= 0) timer.remaining = timer.duration;
+          timer.endsAt = Date.now() + timer.remaining;
+          timer.running = true;
+          timer.fired = false;
+        }
+      }));
+      box.appendChild(toolButton('Zerar', function () {
+        state.timer.running = false;
+        state.timer.remaining = state.timer.duration;
+        state.timer.fired = false;
+      }));
+    } else if (state.instrument === 'alarm') {
+      box.appendChild(toolButton('Hora', function () {
+        state.alarm.hour = (state.alarm.hour + 1) % 24;
+        state.alarm.firedKey = '';
+        writeStore('velocimetro.alarm', state.alarm);
+      }));
+      box.appendChild(toolButton('Min', function () {
+        state.alarm.minute = (state.alarm.minute + 1) % 60;
+        state.alarm.firedKey = '';
+        writeStore('velocimetro.alarm', state.alarm);
+      }));
+      box.appendChild(toolButton(state.alarm.armed ? 'Desarmar' : 'Armar', function () {
+        state.alarm.armed = !state.alarm.armed;
+        state.alarm.firedKey = '';
+        writeStore('velocimetro.alarm', state.alarm);
+      }));
+    }
+  }
+
+  function renderTools(now) {
+    if (!els.toolFace) return;
+    checkTimer();
+    checkAlarm(now);
+    if (!state.instrument) {
+      els.toolFace.hidden = true;
+      return;
+    }
+    els.toolFace.hidden = state.focus !== 1;
+    var names = { stopwatch: 'Cronômetro', timer: 'Temporizador', alarm: 'Alarme' };
+    els.toolName.textContent = names[state.instrument] || '';
+    var readout = '00:00';
+    var key = state.instrument;
+    if (state.instrument === 'stopwatch') {
+      readout = formatSpan(stopwatchMs());
+      key += state.stopwatch.running ? ':on' : ':off';
+    } else if (state.instrument === 'timer') {
+      readout = formatSpan(timerMs());
+      key += (state.timer.running ? ':on' : ':off') + ':' + state.timer.duration;
+    } else if (state.instrument === 'alarm') {
+      readout = pad2(state.alarm.hour) + ':' + pad2(state.alarm.minute);
+      key += (state.alarm.armed ? ':on:' : ':off:') + readout;
+    }
+    els.toolReadout.textContent = readout;
+    if (key !== state.toolActionsKey) {
+      state.toolActionsKey = key;
+      buildToolActions();
+    }
+  }
+
+  function setInstrument(name) {
+    state.instrument = name || '';
+    writeStore('velocimetro.instrument', state.instrument);
+    els.toolPicker.hidden = true;
+    state.toolActionsKey = '';
+    document.querySelectorAll('#toolPicker button').forEach(function (button) {
+      button.setAttribute('aria-pressed', (button.getAttribute('data-tool') || '') === state.instrument ? 'true' : 'false');
+    });
+    renderTools(new Date());
+  }
+
+  var leafletPromise = null;
+  var routeLeaflet = null;
+
+  function loadLeaflet() {
+    if (window.L) return Promise.resolve();
+    if (leafletPromise) return leafletPromise;
+    leafletPromise = new Promise(function (resolve, reject) {
+      var link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css';
+      document.head.appendChild(link);
+      var script = document.createElement('script');
+      script.src = 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js';
+      script.onload = function () { resolve(); };
+      script.onerror = function () {
+        leafletPromise = null;
+        reject(new Error('mapa'));
+      };
+      document.head.appendChild(script);
+    });
+    return leafletPromise;
+  }
+
+  function closeRoute() {
+    els.routeMap.hidden = true;
+    if (routeLeaflet) {
+      routeLeaflet.remove();
+      routeLeaflet = null;
+    }
+  }
+
+  function openRoute(trip) {
+    els.routeMap.hidden = false;
+    var bits = [formatKm(trip.distanceKm) + ' km'];
+    if (trip.movingMs) bits.push(formatSpan(trip.movingMs));
+    els.mapMeta.textContent = bits.join(' · ');
+    var points = trip.track && trip.track.length ? trip.track.slice() : [];
+    if (trip.end && points.length) {
+      var lastPoint = points[points.length - 1];
+      if (lastPoint.lat !== trip.end.lat || lastPoint.lon !== trip.end.lon) points.push(trip.end);
+    }
+    if (!navigator.onLine) {
+      els.mapNote.hidden = false;
+      els.mapNote.textContent = 'O mapa precisa de internet. Quilômetros, tempo e coordenadas continuam salvos.';
+      $('mapCanvas').hidden = true;
+      return;
+    }
+    els.mapNote.hidden = true;
+    $('mapCanvas').hidden = false;
+    loadLeaflet().then(function () {
+      if (els.routeMap.hidden || !window.L) return;
+      if (routeLeaflet) {
+        routeLeaflet.remove();
+        routeLeaflet = null;
+      }
+      var map = L.map('mapCanvas');
+      routeLeaflet = map;
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap'
+      }).addTo(map);
+      var latlngs = points.map(function (point) { return [point.lat, point.lon]; });
+      if (latlngs.length >= 2) {
+        var line = L.polyline(latlngs, { color: '#ff6d00', weight: 5 }).addTo(map);
+        map.fitBounds(line.getBounds(), { padding: [28, 28] });
+      } else if (latlngs.length === 1) {
+        map.setView(latlngs[0], 15);
+      }
+      if (latlngs.length) {
+        L.circleMarker(latlngs[0], { radius: 7, color: '#ffb300', fillColor: '#ffb300', fillOpacity: 1 }).addTo(map);
+        L.circleMarker(latlngs[latlngs.length - 1], { radius: 7, color: '#ff6d00', fillColor: '#ff6d00', fillOpacity: 1 }).addTo(map);
+      }
+      setTimeout(function () { map.invalidateSize(); }, 80);
+    }).catch(function () {
+      els.mapNote.hidden = false;
+      els.mapNote.textContent = 'Não foi possível abrir o mapa agora.';
+    });
+  }
+
   function init() {
     els.kmh = $('kmh');
     els.mph = $('mph');
@@ -752,6 +1144,17 @@
     els.pauseTrip = $('pauseTrip');
     els.finishTrip = $('finishTrip');
     els.gauge = $('gauge');
+    els.hudHint = document.querySelector('.hud-hint');
+    els.companion = $('companion');
+    els.clockDigital = $('clockDigital');
+    els.toolPicker = $('toolPicker');
+    els.toolFace = $('toolFace');
+    els.toolName = $('toolName');
+    els.toolReadout = $('toolReadout');
+    els.toolActions = $('toolActions');
+    els.routeMap = $('routeMap');
+    els.mapMeta = $('mapMeta');
+    els.mapNote = $('mapNote');
     els.themeChip = $('themeChip');
     els.scrim = $('scrim');
     els.drawer = $('drawer');
@@ -765,28 +1168,45 @@
     state.trip = readStore('velocimetro.trip', null);
     state.weather = readStore('velocimetro.weather', null);
     state.demo = !!readStore('velocimetro.demo', false);
+    state.instrument = readStore('velocimetro.instrument', '') || '';
+    var storedAlarm = readStore('velocimetro.alarm', null);
+    if (storedAlarm) state.alarm = storedAlarm;
     var storedTheme = readStore('velocimetro.theme', document.documentElement.dataset.theme || 'amber');
 
     buildDial();
+    buildClock();
     applyTheme(storedTheme);
     renderSpeed();
     renderClock();
     renderTrip();
     renderHistory();
     renderWeather();
+    setInstrument(state.instrument);
     setInterval(function () {
       renderClock();
       if (state.trip) renderTrip();
     }, 1000);
 
-    els.gauge.addEventListener('click', function () {
-      setHud(!state.hud);
+    els.gauge.addEventListener('click', function (event) {
+      event.stopPropagation();
+      setFocus((state.focus + 1) % 3);
     });
     $('dashboard').addEventListener('click', function (event) {
-      if (!state.hud) return;
-      if (event.target.closest('#gauge')) return;
-      setHud(false);
+      if (!state.focus) return;
+      if (event.target.closest('#gauge') || event.target.closest('#companion')) return;
+      setFocus(0);
     });
+    $('clockDial').addEventListener('click', function (event) {
+      event.stopPropagation();
+      els.toolPicker.hidden = !els.toolPicker.hidden;
+    });
+    document.querySelectorAll('#toolPicker button').forEach(function (button) {
+      button.addEventListener('click', function (event) {
+        event.stopPropagation();
+        setInstrument(button.getAttribute('data-tool') || '');
+      });
+    });
+    $('closeMap').addEventListener('click', closeRoute);
     $('startTrip').addEventListener('click', startTrip);
     $('pauseTrip').addEventListener('click', pauseTrip);
     $('finishTrip').addEventListener('click', finishTrip);
@@ -806,7 +1226,8 @@
     document.addEventListener('keydown', function (event) {
       if (event.key !== 'Escape') return;
       if (!els.drawer.hidden) closeDrawer();
-      else if (state.hud) setHud(false);
+      else if (els.routeMap && !els.routeMap.hidden) closeRoute();
+      else if (state.focus) setFocus(0);
     });
     document.addEventListener('visibilitychange', function () {
       if (document.visibilityState === 'visible') requestWake();

@@ -393,11 +393,22 @@ time {
   text-transform: uppercase;
 }
 
-.units span:last-child {
-  color: var(--muted);
-  letter-spacing: 0.04em;
-  text-transform: none;
-  font-size: 12px;
+.mph-badge {
+  position: absolute;
+  right: 3%;
+  bottom: 0;
+  z-index: 6;
+  pointer-events: none;
+  padding: 0.12em 0.32em 0.1em;
+  border-radius: 0.38em;
+  background: var(--bg);
+  color: var(--text);
+  border: 2px solid var(--line);
+  box-shadow: 0 8px 18px var(--lo), inset 0 1px 0 var(--hi);
+  font-size: clamp(1.5rem, 13cqh, 2.8rem);
+  font-weight: 900;
+  line-height: 0.95;
+  letter-spacing: -0.04em;
 }
 
 .plate {
@@ -656,21 +667,208 @@ time {
 .chevron { display: none; }
 
 body.is-hud .topbar,
-body.is-hud .side { display: none; }
+body.is-hud .side,
+body.is-focus .topbar,
+body.is-focus .side { display: none; }
 
-body.is-hud .hud-hint { display: block; }
+body.is-hud .hud-hint,
+body.is-focus .hud-hint { display: block; }
 
-body.is-hud .dashboard {
+body.is-hud .dashboard,
+body.is-focus .dashboard {
   display: flex;
   align-items: center;
   justify-content: center;
   min-height: 0;
-  padding: 4px;
+  padding: 14px;
+  gap: 14px;
 }
 
-body.is-hud .gauge {
+body.is-hud .gauge,
+body.is-focus .gauge {
+  width: auto;
+  height: 100%;
+  flex: 1.4 1 0;
+  min-width: 0;
+}
+
+.companion {
+  flex: 0.78 1 0;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.companion-clock {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  max-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+body.is-focus .companion:has(#toolFace:not([hidden])) .companion-clock {
+  flex: 1.15 1 0;
+}
+
+body.is-focus .companion:has(#toolFace:not([hidden])) .tool-face {
+  flex: 0.8 1 0;
+  min-height: 0;
+  justify-content: center;
+}
+
+.clock-dial {
   width: 100%;
   height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  container-type: size;
+  cursor: pointer;
+}
+
+.clock-bezel {
+  width: min(100cqw, 100cqh);
+  height: min(100cqw, 100cqh);
+}
+
+#secondHand { stroke: var(--accent); stroke-width: 3; stroke-linecap: round; }
+#hourHand, #minuteHand { fill: var(--text); }
+#minuteHand { fill: var(--accent); }
+
+.clock-digital {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 18%;
+  text-align: center;
+  font-size: clamp(0.85rem, 16cqi, 1.6rem);
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+}
+
+.tool-picker {
+  position: absolute;
+  left: 50%;
+  bottom: 6%;
+  transform: translateX(-50%);
+  z-index: 6;
+  width: min(100%, 220px);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+
+.tool-picker button {
+  min-width: 0;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--plate-bot);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.tool-picker button[aria-pressed="true"] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.tool-face {
+  width: 100%;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px;
+}
+
+.tool-face .kicker { margin: 0; }
+
+.tool-readout {
+  margin: 0;
+  font-size: clamp(1.4rem, 5vh, 2.4rem);
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+
+.tool-face.is-ringing .tool-readout {
+  color: var(--accent);
+}
+
+.tool-actions {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+}
+
+.tool-actions .skeuo {
+  flex: 1 1 0;
+  height: 40px;
+  min-height: 40px;
+  flex-direction: row;
+  font-size: 12px;
+}
+
+.route-map {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding:
+    calc(10px + env(safe-area-inset-top))
+    calc(12px + env(safe-area-inset-right))
+    calc(10px + env(safe-area-inset-bottom))
+    calc(12px + env(safe-area-inset-left));
+  background: var(--bg);
+  color: var(--text);
+}
+
+.route-map[hidden] { display: none !important; }
+
+#mapCanvas {
+  flex: 1 1 auto;
+  min-height: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--cutout);
+}
+
+.map-note, .map-credit {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.trip-buttons {
+  display: flex;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.trip-coords {
+  color: var(--dim);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 [hidden] { display: none !important; }
